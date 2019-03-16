@@ -1,10 +1,12 @@
 package com.utad.desarrollo.seguro.dto;
 
 import javax.validation.constraints.Email;
+import javax.validation.constraints.NotNull;
 
 public class DummyRequestBodySubAttribute {
 
     @Email
+    @NotNull
     private String subAttribute1;
 
     private Long subAttribute2;
