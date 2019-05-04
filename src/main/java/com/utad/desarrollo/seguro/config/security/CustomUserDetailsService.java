@@ -9,22 +9,22 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
-import com.utad.desarrollo.seguro.entity.UserEntity;
-import com.utad.desarrollo.seguro.repository.UsersRepository;
+import com.utad.desarrollo.seguro.dto.UserDto;
+import com.utad.desarrollo.seguro.service.UsersService;
 
 @Configuration
 public class CustomUserDetailsService
         implements UserDetailsService {
 
     @Autowired
-    private UsersRepository usersRepository;
+    private UsersService usersService;
 
     @Override
     public UserDetails loadUserByUsername(
             String username)
             throws UsernameNotFoundException {
-       
-        UserEntity user = usersRepository.findByUsername(username);
+
+        UserDto user = usersService.getByUsername(username);
 
         if (user == null) {
             throw new UsernameNotFoundException("");

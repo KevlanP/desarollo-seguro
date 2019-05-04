@@ -1,15 +1,32 @@
 package com.utad.desarrollo.seguro.config.security;
 
+import java.io.IOException;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.validation.Validator;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.utad.desarrollo.seguro.dto.SuccessDto;
 
 @Configuration
 @EnableWebSecurity
@@ -23,21 +40,46 @@ public class SecurityConfig
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private Validator validator;
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public AuthenticationFilter authenticationFilter()
+            throws Exception {
+        AuthenticationFilter authenticationFilter = new AuthenticationFilter(objectMapper, validator);
+        authenticationFilter.setFilterProcessesUrl("/api/session/login");
+        authenticationFilter.setAuthenticationSuccessHandler(this::loginSuccessHandler);
+        authenticationFilter.setAuthenticationFailureHandler(this::loginFailureHandler);
+        authenticationFilter.setAuthenticationManager(authenticationManagerBean());
+        return authenticationFilter;
+    }
+
+    @Bean
+    public AuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider authenticationProvider = new DaoAuthenticationProvider();
+        authenticationProvider.setUserDetailsService(userDetailsService);
+        authenticationProvider.setPasswordEncoder(passwordEncoder);
+        return authenticationProvider;
+    }
+
     @Override
     protected void configure(
             HttpSecurity http)
             throws Exception {
 
         // Login and Logout.
-        http.formLogin()
-                .loginPage("/login")
-                .loginProcessingUrl("/login")
-                .defaultSuccessUrl("/")
-                .failureUrl("/login?failure=true")
-                .and()
-                .logout()
-                .logoutUrl("/logout")
-                .logoutSuccessUrl("/login");
+        http
+                .addFilterBefore(authenticationFilter(), UsernamePasswordAuthenticationFilter.class)
+                .logout().logoutUrl("/api/session/logout").logoutSuccessHandler(this::logoutSuccessHandler)
+                .and().exceptionHandling().authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED));
 
         // Authentication Provider.
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
@@ -49,14 +91,60 @@ public class SecurityConfig
         http.authorizeRequests()
 
                 // Allow Base URLs
-                .and().authorizeRequests().antMatchers("/login").permitAll()
-                .and().authorizeRequests().antMatchers("/logout").permitAll()
+                .and().authorizeRequests().antMatchers("/api/session/login").permitAll()
+                .and().authorizeRequests().antMatchers("/api/session/logout").permitAll()
+                .and().authorizeRequests().antMatchers("/api/session/info").permitAll()
 
                 // Require Authentication for any other URL
                 .and().authorizeRequests().anyRequest().fullyAuthenticated();
 
         // CSRF.
         http.csrf().disable();
+
+    }
+
+    private void loginSuccessHandler(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Authentication authentication)
+            throws IOException {
+
+        // Change session tokens (avoid fixation).
+        try {
+            request.changeSessionId();
+        } catch (IllegalStateException e) {
+        }
+
+        // Return an object indicating that the login was successful.
+        response.setStatus(HttpStatus.OK.value());
+        response.setContentType(MediaType.APPLICATION_JSON_UTF8_VALUE);
+        objectMapper.writeValue(response.getWriter(), new SuccessDto(true));
+
+    }
+
+    private void loginFailureHandler(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            AuthenticationException e)
+            throws IOException {
+
+        // Return an object indicating that the login was unsuccessful.
+        response.setStatus(HttpStatus.OK.value());
+        response.setContentType(MediaType.APPLICATION_JSON_UTF8_VALUE);
+        objectMapper.writeValue(response.getWriter(), new SuccessDto(false));
+
+    }
+
+    private void logoutSuccessHandler(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Authentication authentication)
+            throws IOException {
+
+        // Return an object indicating that the logout was successful.
+        response.setStatus(HttpStatus.OK.value());
+        response.setContentType(MediaType.APPLICATION_JSON_UTF8_VALUE);
+        objectMapper.writeValue(response.getWriter(), new SuccessDto(true));
 
     }
 
